@@ -1,4 +1,4 @@
-# ABFA_HAR
+# ABFA-HAR
 **(paper source) Action-Prototype Guided Temporal Modeling for Human Activity Recognition (https://github.com/lky473736/ABFA-HAR.git)**
 
 
@@ -37,21 +37,10 @@ ABFA-HAR/
 │   ├── PAMAP2_Dataset/
 │   └── MHEALTHDATASET/
 ├── data_parsing/            # Dataset handlers
-│   ├── __init__.py
-│   ├── base_dataset.py
-│   ├── UCI_HAR.py
-│   ├── WISDM.py
-│   ├── PAMAP2.py
-│   └── mHealth.py
-├── models/                  # Model architecture
-│   ├── __init__.py
-│   └── model.py
-├── utils/                   # Utility functions
-│   ├── __init__.py
-│   ├── logger.py
-│   ├── metrics.py
-│   └── visualization.py
-└── testing/                 # Output directory for experimental results
+│   └── data_loader.py
+└── model/                  # Model architecture
+    ├── __init__.py
+    └── model.py
 ```
 
 ## Requirements

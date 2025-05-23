@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-Configuration parameters for the ABFA-MST HAR system.
-Action-Prototype Guided Temporal Modeling for Human Activity Recognition
-"""
 
 import os
 import numpy as np
@@ -14,93 +10,115 @@ import tensorflow as tf
 # Paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-TESTING_DIR = os.path.join(BASE_DIR, "testing")
 
 # Create directories if they don't exist
 os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(TESTING_DIR, exist_ok=True)
 
 # Dataset paths
 DATASET_PATHS = {
-    "PAMAP2": os.path.join(DATA_DIR, "PAMAP2_Dataset"),
     "UCI_HAR": os.path.join(DATA_DIR, "UCI_HAR_Dataset"),
     "WISDM": os.path.join(DATA_DIR, "WISDM_ar_v1.1"),
-    "mHealth": os.path.join(DATA_DIR, "MHEALTHDATASET")
+    "mHealth": os.path.join(DATA_DIR, "MHEALTHDATASET"),
+    "PAMAP2": os.path.join(DATA_DIR, "PAMAP2_Dataset")
 }
 
-# Global parameters
+# Global training parameters
 SEED = 42
 BATCH_SIZE = 32
 EPOCHS = 100
 LEARNING_RATE = 0.0001
-WEIGHT_DECAY = 1e-7
+WEIGHT_DECAY = 1e-4
 PATIENCE = 10
 
-# Model parameters
-EMBEDDING_DIM = 128
-TRANSFORMER_NUM_HEADS = 4
-DROPOUT_RATE = 0.2
-NUM_ACTIVITY_CLASSES = 12  # For ABFA layer
+# ABFA Model architecture parameters (Full Model: 1+2+3+4+5+6)
+# 1: Initial Projection
+INITIAL_PROJECTION_FILTERS = [64, 128]
 
-# Window parameters (fixed per dataset)
+# 2: Multi-Scale CNN Path  
+MSCP_FILTERS = 128
+MSCP_KERNEL_SIZES = [3, 7, 11]
+
+# 3: ABFA Block
+ABFA_FILTERS = 128
+ABFA_DROPOUT_RATE = 0.2
+
+# 4: MST Block
+MST_FILTERS = 128
+MST_KERNEL_SIZES = [3, 5, 7]
+
+# 5: Transformer Encoder Block
+TRANSFORMER_UNITS = 128
+TRANSFORMER_HEADS = 4
+TRANSFORMER_KEY_DIM = 64
+
+# 6: Classification Head
+CLASSIFICATION_UNITS = [128, 64]
+
+# Dropout and regularization
+DROPOUT_RATE = 0.2
+BN_MOMENTUM = 0.99
+LAYER_NORM_EPSILON = 1e-6
+
+# Learning rate scheduling
+LR_REDUCE_FACTOR = 0.5
+LR_REDUCE_PATIENCE = 5
+MIN_LR = 1e-5
+
+# Dataset-specific window parameters
 WINDOW_PARAMS = {
-    "PAMAP2": {"window_width": 100, "stride": 50, "sampling_rate": 100},
-    "UCI_HAR": {"window_width": 128, "stride": 128, "sampling_rate": 50},
-    "WISDM": {"window_width": 20, "stride": 10, "sampling_rate": 20},
-    "mHealth": {"window_width": 50, "stride": 25, "sampling_rate": 50}
+    "UCI_HAR": {"window_size": 128, "step": 64, "sampling_rate": 50, "num_classes": 6},
+    "WISDM": {"window_size": 80, "step": 40, "sampling_rate": 20, "num_classes": 6},
+    "mHealth": {"window_size": 50, "step": 25, "sampling_rate": 50, "num_classes": 12},
+    "PAMAP2": {"window_size": 100, "step": 50, "sampling_rate": 100, "num_classes": 12}
 }
 
-# Class information for UCI_HAR
-UCI_HAR_ACTIVITY_LABELS = [
-    'WALKING',
-    'WALKING_UPSTAIRS',
-    'WALKING_DOWNSTAIRS',
-    'SITTING',
-    'STANDING',
-    'LAYING'
-]
-
-# Class information for WISDM
-WISDM_ACTIVITY_LABELS = [
-    'Walking',
-    'Jogging',
-    'Sitting',
-    'Standing',
-    'Upstairs',
-    'Downstairs'
-]
-
-# Class information for mHealth
-MHEALTH_ACTIVITY_LABELS = [
-    'L1: Standing still',
-    'L2: Sitting and relaxing',
-    'L3: Lying down',
-    'L4: Walking',
-    'L5: Climbing stairs',
-    'L6: Waist bends forward',
-    'L7: Frontal elevation of arms',
-    'L8: Knees bending (crouching)',
-    'L9: Cycling',
-    'L10: Jogging',
-    'L11: Running',
-    'L12: Jump front & back'
-]
-
-# Class information for PAMAP2
-PAMAP2_ACTIVITY_LABELS = [
-    'lying',
-    'sitting',
-    'standing',
-    'walking',
-    'running',
-    'cycling',
-    'Nordic walking',
-    'ascending stairs',
-    'descending stairs',
-    'vacuum cleaning',
-    'ironing',
-    'rope jumping'
-]
+# Dataset-specific class information
+DATASET_CLASSES = {
+    "UCI_HAR": {
+        0: "WALKING",
+        1: "WALKING_UPSTAIRS", 
+        2: "WALKING_DOWNSTAIRS",
+        3: "SITTING",
+        4: "STANDING",
+        5: "LAYING"
+    },
+    "WISDM": {
+        0: "Walking",
+        1: "Jogging", 
+        2: "Sitting",
+        3: "Standing",
+        4: "Upstairs",
+        5: "Downstairs"
+    },
+    "mHealth": {
+        0: "Standing still",
+        1: "Sitting and relaxing",
+        2: "Lying down",
+        3: "Walking",
+        4: "Climbing stairs",
+        5: "Waist bends forward",
+        6: "Frontal elevation of arms",
+        7: "Knees bending (crouching)",
+        8: "Cycling",
+        9: "Jogging",
+        10: "Running",
+        11: "Jump front & back"
+    },
+    "PAMAP2": {
+        0: "lying",
+        1: "sitting", 
+        2: "standing",
+        3: "walking",
+        4: "running",
+        5: "cycling",
+        6: "Nordic walking",
+        7: "ascending stairs",
+        8: "descending stairs",
+        9: "vacuum cleaning",
+        10: "ironing",
+        11: "rope jumping"
+    }
+}
 
 def set_seed(seed=SEED):
     """
@@ -126,15 +144,21 @@ def set_seed(seed=SEED):
         except RuntimeError as e:
             print(f"GPU configuration error: {e}")
 
-# ABFA model component configuration
-ABFA_COMPONENTS = {
-    "INITIAL_PROJECTION": 1,
-    "MULTI_SCALE_CNN": 2,
-    "ABFA_BLOCK": 3,
-    "MST_BLOCK": 4,
-    "TRANSFORMER_ENCODER": 5,
-    "CLASSIFICATION_HEAD": 6
-}
-
-# Full model configuration (all components)
-FULL_MODEL_CONFIG = [1, 2, 3, 4, 5, 6]
+def get_dataset_config(dataset_name):
+    """
+    Get configuration for a specific dataset.
+    
+    Args:
+        dataset_name (str): Name of the dataset
+        
+    Returns:
+        dict: Dataset configuration
+    """
+    if dataset_name not in WINDOW_PARAMS:
+        raise ValueError(f"Unknown dataset: {dataset_name}")
+    
+    config = WINDOW_PARAMS[dataset_name].copy()
+    config['classes'] = DATASET_CLASSES[dataset_name]
+    config['dataset_path'] = DATASET_PATHS[dataset_name]
+    
+    return config
