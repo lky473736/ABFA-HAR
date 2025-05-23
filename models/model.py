@@ -8,7 +8,6 @@ from config import *
 
 class ABFA(tf.keras.layers.Layer):
     """
-    Action-Prototype Guided Feature Augmentation Block
     Component 3: ABFA Block
     """
     def __init__(self, filters, activity_classes, dropout_rate=ABFA_DROPOUT_RATE, **kwargs):
@@ -64,13 +63,12 @@ class ABFA(tf.keras.layers.Layer):
         })
         return config
 
-class MST_Block(layers.Layer):
+class MSA_Block(layers.Layer):
     """
-    Multi-Scale Temporal Block
-    Component 4: MST Block
+    Component 4: MSA Block
     """
-    def __init__(self, filters, kernel_sizes=MST_KERNEL_SIZES, **kwargs):
-        super(MST_Block, self).__init__(**kwargs)
+    def __init__(self, filters, kernel_sizes=MSA_KERNEL_SIZES, **kwargs):
+        super(MSA_Block, self).__init__(**kwargs)
         self.filters = filters
         self.kernel_sizes = kernel_sizes
 
@@ -90,7 +88,7 @@ class MST_Block(layers.Layer):
                     strides=1,
                     padding='same',
                     depth_multiplier=1,
-                    name=f'mst_depthwise_conv_{k_size}'
+                    name=f'MSA_depthwise_conv_{k_size}'
                 )
             )
         
@@ -102,7 +100,7 @@ class MST_Block(layers.Layer):
                     filter_dim, 
                     kernel_size=1, 
                     padding='same',
-                    name=f'mst_proj_{i}'
+                    name=f'MSA_proj_{i}'
                 )
             )
         
@@ -110,7 +108,7 @@ class MST_Block(layers.Layer):
         self.output_proj = layers.Conv1D(
             self.filters, 
             kernel_size=1,
-            name='mst_output_proj'
+            name='MSA_output_proj'
         )
         
         super().build(input_shape)
@@ -123,7 +121,7 @@ class MST_Block(layers.Layer):
             outputs.append(x)
         
         # Concatenate multi-scale features
-        x = layers.Concatenate(name='mst_concat')(outputs)
+        x = layers.Concatenate(name='MSA_concat')(outputs)
         
         # Final projection
         return self.output_proj(x)
@@ -169,26 +167,26 @@ def build_abfa_model(input_shape, num_classes):
     x = layers.BatchNormalization(momentum=BN_MOMENTUM, name='initial_bn_2')(x)
     x = layers.ReLU(name='initial_relu_2')(x)
 
-    # Component 2: Multi-Scale CNN Path
+    # Component 2: MKTC
     multi_scale_outputs = []
-    for i, k in enumerate(MSCP_KERNEL_SIZES):
+    for i, k in enumerate(MKTC_KERNEL_SIZES):
         branch = layers.Conv1D(
-            filters=MSCP_FILTERS // len(MSCP_KERNEL_SIZES),
+            filters=MKTC_FILTERS // len(MKTC_KERNEL_SIZES),
             kernel_size=k,
             padding='same',
             activation='relu',
-            name=f'mscp_conv_{k}'
+            name=f'MKTC_conv_{k}'
         )(x)
         branch = layers.BatchNormalization(
             momentum=BN_MOMENTUM,
-            name=f'mscp_bn_{k}'
+            name=f'MKTC_bn_{k}'
         )(branch)
         multi_scale_outputs.append(branch)
 
-    x = layers.Concatenate(name='mscp_concat')(multi_scale_outputs)
-    x = layers.Conv1D(MSCP_FILTERS, kernel_size=1, name='mscp_proj')(x)
-    x = layers.BatchNormalization(momentum=BN_MOMENTUM, name='mscp_final_bn')(x)
-    x = layers.ReLU(name='mscp_final_relu')(x)
+    x = layers.Concatenate(name='MKTC_concat')(multi_scale_outputs)
+    x = layers.Conv1D(MKTC_FILTERS, kernel_size=1, name='MKTC_proj')(x)
+    x = layers.BatchNormalization(momentum=BN_MOMENTUM, name='MKTC_final_bn')(x)
+    x = layers.ReLU(name='MKTC_final_relu')(x)
 
     # Component 3: ABFA Block
     x = ABFA(
@@ -197,11 +195,11 @@ def build_abfa_model(input_shape, num_classes):
         name='abfa_block'
     )(x)
 
-    # Component 4: MST Block
-    x = MST_Block(
-        filters=MST_FILTERS, 
-        kernel_sizes=MST_KERNEL_SIZES,
-        name='mst_block'
+    # Component 4: MSA Block
+    x = MSA_Block(
+        filters=MSA_FILTERS, 
+        kernel_sizes=MSA_KERNEL_SIZES,
+        name='MSA_block'
     )(x)
 
     # Component 5: Transformer Encoder Block

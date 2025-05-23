@@ -6,7 +6,7 @@ from .model import (
     compile_model,
     get_model_summary,
     ABFA,
-    MST_Block
+    MSA_Block
 )
 
 __all__ = [
@@ -14,5 +14,5 @@ __all__ = [
     'compile_model', 
     'get_model_summary',
     'ABFA',
-    'MST_Block'
+    'MSA_Block'
 ]
