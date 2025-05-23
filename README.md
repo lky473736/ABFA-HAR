@@ -77,30 +77,6 @@ You can install all required packages using:
 pip install -r requirements.txt
 ```
 
-## About ABFA (Action Based Feature Augmentation)
-
-<p align="center"><img src='./ABFA_figure.png'></p>
-
-The process begins with an Input Feature, which is projected to a new space as 
-𝑋
-proj
-X 
-proj
-​
- . This projected feature is then used to compute attention scores in relation to a Prototype Set 
-𝑃
-P. A Softmax operation is applied to generate attention weights, which are used to compute a weighted sum over the prototype set—referred to as Attention-Weights Sum.
-
-These attention weights are then passed along with the projected input to an Attention-Weights module, which integrates this information. The result, along with the original input feature, flows into a normalization and regularization block composed of Batch Normalization (BN), Dropout, and Layer Normalization (LayerNorm).
-
-Finally, this produces an Enhanced Feature, which is a more informative and contextually aware representation of the original input, enriched through the use of prototype-based attention.
-
-The ABFA model implements a sophisticated architecture with:
-- Action-Prototype guidance for temporal modeling
-- Temporal Convolutional Network (TCN) blocks for local feature extraction
-- Bidirectional GRU layers for capturing sequential dependencies
-- Attention mechanisms for focusing on important temporal patterns
-- Prototype learning for better activity classification
 
 ## Citing this Repository
 
