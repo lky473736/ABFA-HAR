@@ -6,10 +6,108 @@ from tensorflow.keras import layers, models
 import numpy as np
 from config import *
 
+class StemLayer(tf.keras.layers.Layer):
+    def __init__(self, filters_list, **kwargs):
+        super(StemLayer, self).__init__(**kwargs)
+        self.filters_list = filters_list
+
+    def build(self, input_shape):
+        self.conv_layers = []
+        self.bn_layers = []
+        self.relu_layers = []
+        
+        for i, filters in enumerate(self.filters_list):
+            self.conv_layers.append(
+                layers.Conv1D(
+                    filters, 
+                    kernel_size=1, 
+                    activation=None,
+                    name=f'stem_conv_{i+1}'
+                )
+            )
+            self.bn_layers.append(
+                layers.BatchNormalization(
+                    momentum=BN_MOMENTUM, 
+                    name=f'stem_bn_{i+1}'
+                )
+            )
+            self.relu_layers.append(
+                layers.ReLU(name=f'stem_relu_{i+1}')
+            )
+        super().build(input_shape)
+
+    def call(self, inputs, training=None):
+        x = inputs
+        for conv, bn, relu in zip(self.conv_layers, self.bn_layers, self.relu_layers):
+            x = conv(x)
+            x = bn(x, training=training)
+            x = relu(x)
+        return x
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({'filters_list': self.filters_list})
+        return config
+
+class MKTC(tf.keras.layers.Layer):
+    def __init__(self, filters, kernel_sizes, **kwargs):
+        super(MKTC, self).__init__(**kwargs)
+        self.filters = filters
+        self.kernel_sizes = kernel_sizes
+
+    def build(self, input_shape):
+        self.branch_convs = []
+        self.branch_bns = []
+        
+        branch_filters = self.filters // len(self.kernel_sizes)
+        
+        for i, k in enumerate(self.kernel_sizes):
+            self.branch_convs.append(
+                layers.Conv1D(
+                    filters=branch_filters,
+                    kernel_size=k,
+                    padding='same',
+                    activation='relu',
+                    name=f'MKTC_conv_{k}'
+                )
+            )
+            self.branch_bns.append(
+                layers.BatchNormalization(
+                    momentum=BN_MOMENTUM,
+                    name=f'MKTC_bn_{k}'
+                )
+            )
+        
+        self.concat = layers.Concatenate(name='MKTC_concat')
+        self.proj_conv = layers.Conv1D(self.filters, kernel_size=1, name='MKTC_proj')
+        self.final_bn = layers.BatchNormalization(momentum=BN_MOMENTUM, name='MKTC_final_bn')
+        self.final_relu = layers.ReLU(name='MKTC_final_relu')
+        
+        super().build(input_shape)
+
+    def call(self, inputs, training=None):
+        branches = []
+        for conv, bn in zip(self.branch_convs, self.branch_bns):
+            branch = conv(inputs)
+            branch = bn(branch, training=training)
+            branches.append(branch)
+        
+        x = self.concat(branches)
+        x = self.proj_conv(x)
+        x = self.final_bn(x, training=training)
+        x = self.final_relu(x)
+        
+        return x
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'filters': self.filters,
+            'kernel_sizes': self.kernel_sizes
+        })
+        return config
+
 class ABFA(tf.keras.layers.Layer):
-    """
-    Component 3: ABFA Block
-    """
     def __init__(self, filters, activity_classes, dropout_rate=ABFA_DROPOUT_RATE, **kwargs):
         super(ABFA, self).__init__(**kwargs)
         self.filters = filters
@@ -17,7 +115,6 @@ class ABFA(tf.keras.layers.Layer):
         self.dropout_rate = dropout_rate
 
     def build(self, input_shape):
-        # Action prototypes for each activity class
         self.action_prototypes = self.add_weight(
             name='action_prototypes',
             shape=(self.activity_classes, input_shape[-1]),
@@ -25,11 +122,9 @@ class ABFA(tf.keras.layers.Layer):
             trainable=True
         )
         
-        # Projection layers
         self.embedding_proj = layers.Dense(input_shape[-1], name='embedding_proj')
         self.augment_proj = layers.Dense(input_shape[-1], name='augment_proj')
         
-        # Normalization and regularization
         self.bn = layers.BatchNormalization(momentum=BN_MOMENTUM, name='abfa_bn')
         self.dropout = layers.Dropout(self.dropout_rate, name='abfa_dropout')
         self.layer_norm = layers.LayerNormalization(epsilon=LAYER_NORM_EPSILON, name='abfa_layer_norm')
@@ -37,18 +132,14 @@ class ABFA(tf.keras.layers.Layer):
         super().build(input_shape)
 
     def call(self, inputs, training=None):
-        # Project input embeddings
         x_proj = self.embedding_proj(inputs)
         
-        # Compute similarity with action prototypes
         proto_similarity = tf.einsum('btd,cd->btc', x_proj, self.action_prototypes)
         proto_attention = tf.nn.softmax(proto_similarity, axis=-1)
         
-        # Prototype-guided feature enhancement
         enhanced = tf.einsum('btc,cd->btd', proto_attention, self.action_prototypes)
         augmented = self.augment_proj(enhanced)
         
-        # Residual connection with normalization
         x = self.bn(inputs + augmented, training=training)
         x = self.dropout(x, training=training)
         
@@ -64,22 +155,17 @@ class ABFA(tf.keras.layers.Layer):
         return config
 
 class MSA_Block(layers.Layer):
-    """
-    Component 4: MSA Block
-    """
     def __init__(self, filters, kernel_sizes=MSA_KERNEL_SIZES, **kwargs):
         super(MSA_Block, self).__init__(**kwargs)
         self.filters = filters
         self.kernel_sizes = kernel_sizes
 
-        # Distribute filters across different scales
         if len(kernel_sizes) == 3:
             self.filter_dims = [filters // 4, filters // 4, filters // 2]
         else:
             self.filter_dims = [filters // len(kernel_sizes)] * len(kernel_sizes)
 
     def build(self, input_shape):
-        # Depthwise convolutions for different temporal scales
         self.conv_layers = []
         for i, k_size in enumerate(self.kernel_sizes):
             self.conv_layers.append(
@@ -92,7 +178,6 @@ class MSA_Block(layers.Layer):
                 )
             )
         
-        # Projection layers for each scale
         self.proj_layers = []
         for i, filter_dim in enumerate(self.filter_dims):
             self.proj_layers.append(
@@ -104,7 +189,6 @@ class MSA_Block(layers.Layer):
                 )
             )
         
-        # Output projection
         self.output_proj = layers.Conv1D(
             self.filters, 
             kernel_size=1,
@@ -120,10 +204,8 @@ class MSA_Block(layers.Layer):
             x = proj(x)
             outputs.append(x)
         
-        # Concatenate multi-scale features
         x = layers.Concatenate(name='MSA_concat')(outputs)
         
-        # Final projection
         return self.output_proj(x)
 
     def get_config(self):
@@ -134,117 +216,139 @@ class MSA_Block(layers.Layer):
         })
         return config
 
-def build_abfa_model(input_shape, num_classes):
-    """
-    Build the complete ABFA model with all components (1+2+3+4+5+6)
-    
-    Args:
-        input_shape (tuple): Input shape (time_steps, features)
-        num_classes (int): Number of activity classes
+class TransformerEncoder(tf.keras.layers.Layer):
+    def __init__(self, num_heads, key_dim, ffn_units, **kwargs):
+        super(TransformerEncoder, self).__init__(**kwargs)
+        self.num_heads = num_heads
+        self.key_dim = key_dim
+        self.ffn_units = ffn_units
+
+    def build(self, input_shape):
+        self.attention = layers.MultiHeadAttention(
+            num_heads=self.num_heads, 
+            key_dim=self.key_dim,
+            name='transformer_attention'
+        )
         
-    Returns:
-        tf.keras.Model: Complete ABFA model
-    """
+        self.add_1 = layers.Add(name='transformer_add_1')
+        self.norm_1 = layers.LayerNormalization(epsilon=LAYER_NORM_EPSILON, name='transformer_norm_1')
+        
+        self.ffn_1 = layers.Dense(self.ffn_units, activation='relu', name='transformer_ffn_1')
+        self.ffn_2 = layers.Dense(self.ffn_units, name='transformer_ffn_2')
+        
+        self.add_2 = layers.Add(name='transformer_add_2')
+        self.norm_2 = layers.LayerNormalization(epsilon=LAYER_NORM_EPSILON, name='transformer_norm_2')
+        
+        super().build(input_shape)
+
+    def call(self, inputs, training=None):
+        attn_output = self.attention(inputs, inputs, training=training)
+        
+        x = self.add_1([inputs, attn_output])
+        x = self.norm_1(x, training=training)
+        
+        ffn_output = self.ffn_1(x)
+        ffn_output = self.ffn_2(ffn_output)
+        
+        x = self.add_2([x, ffn_output])
+        x = self.norm_2(x, training=training)
+        
+        return x
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'num_heads': self.num_heads,
+            'key_dim': self.key_dim,
+            'ffn_units': self.ffn_units
+        })
+        return config
+
+class ClassificationHead(tf.keras.layers.Layer):
+    def __init__(self, units_list, num_classes, dropout_rate, **kwargs):
+        super(ClassificationHead, self).__init__(**kwargs)
+        self.units_list = units_list
+        self.num_classes = num_classes
+        self.dropout_rate = dropout_rate
+
+    def build(self, input_shape):
+        self.global_pool = layers.GlobalAveragePooling1D(name='global_avg_pool')
+        
+        self.dense_layers = []
+        for i, units in enumerate(self.units_list):
+            self.dense_layers.append(
+                layers.Dense(units, activation='relu', name=f'cls_dense_{i+1}')
+            )
+        
+        self.dropout = layers.Dropout(self.dropout_rate, name='cls_dropout')
+        self.predictions = layers.Dense(self.num_classes, activation='softmax', name='predictions')
+        
+        super().build(input_shape)
+
+    def call(self, inputs, training=None):
+        x = self.global_pool(inputs)
+        
+        for i, dense in enumerate(self.dense_layers):
+            x = dense(x)
+            if i == 0:
+                x = self.dropout(x, training=training)
+        
+        return self.predictions(x)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'units_list': self.units_list,
+            'num_classes': self.num_classes,
+            'dropout_rate': self.dropout_rate
+        })
+        return config
+
+def build_abfa_model(input_shape, num_classes):
     inputs = layers.Input(shape=input_shape, name="input_layer")
-    x = inputs
-
-    # Component 1: Initial Projection
-    x = layers.Conv1D(
-        INITIAL_PROJECTION_FILTERS[0], 
-        kernel_size=1, 
-        activation=None,
-        name='initial_proj_1'
-    )(x)
-    x = layers.BatchNormalization(momentum=BN_MOMENTUM, name='initial_bn_1')(x)
-    x = layers.ReLU(name='initial_relu_1')(x)
     
-    x = layers.Conv1D(
-        INITIAL_PROJECTION_FILTERS[1], 
-        kernel_size=1, 
-        activation=None,
-        name='initial_proj_2'
+    x = StemLayer(
+        filters_list=INITIAL_PROJECTION_FILTERS,
+        name='stem_layer'
+    )(inputs)
+    
+    x = MKTC(
+        filters=MKTC_FILTERS,
+        kernel_sizes=MKTC_KERNEL_SIZES,
+        name='mktc_block'
     )(x)
-    x = layers.BatchNormalization(momentum=BN_MOMENTUM, name='initial_bn_2')(x)
-    x = layers.ReLU(name='initial_relu_2')(x)
-
-    # Component 2: MKTC
-    multi_scale_outputs = []
-    for i, k in enumerate(MKTC_KERNEL_SIZES):
-        branch = layers.Conv1D(
-            filters=MKTC_FILTERS // len(MKTC_KERNEL_SIZES),
-            kernel_size=k,
-            padding='same',
-            activation='relu',
-            name=f'MKTC_conv_{k}'
-        )(x)
-        branch = layers.BatchNormalization(
-            momentum=BN_MOMENTUM,
-            name=f'MKTC_bn_{k}'
-        )(branch)
-        multi_scale_outputs.append(branch)
-
-    x = layers.Concatenate(name='MKTC_concat')(multi_scale_outputs)
-    x = layers.Conv1D(MKTC_FILTERS, kernel_size=1, name='MKTC_proj')(x)
-    x = layers.BatchNormalization(momentum=BN_MOMENTUM, name='MKTC_final_bn')(x)
-    x = layers.ReLU(name='MKTC_final_relu')(x)
-
-    # Component 3: ABFA Block
+    
     x = ABFA(
         filters=ABFA_FILTERS, 
         activity_classes=num_classes,
         name='abfa_block'
     )(x)
-
-    # Component 4: MSA Block
+    
     x = MSA_Block(
         filters=MSA_FILTERS, 
         kernel_sizes=MSA_KERNEL_SIZES,
         name='MSA_block'
     )(x)
-
-    # Component 5: Transformer Encoder Block
-    # Multi-head attention
-    attn_output = layers.MultiHeadAttention(
-        num_heads=TRANSFORMER_HEADS, 
+    
+    x = TransformerEncoder(
+        num_heads=TRANSFORMER_HEADS,
         key_dim=TRANSFORMER_KEY_DIM,
-        name='transformer_attention'
-    )(x, x)
+        ffn_units=TRANSFORMER_UNITS,
+        name='transformer_encoder'
+    )(x)
     
-    # Add & Norm
-    x = layers.Add(name='transformer_add_1')([x, attn_output])
-    x = layers.LayerNormalization(epsilon=LAYER_NORM_EPSILON, name='transformer_norm_1')(x)
+    outputs = ClassificationHead(
+        units_list=CLASSIFICATION_UNITS,
+        num_classes=num_classes,
+        dropout_rate=DROPOUT_RATE,
+        name='classification_head'
+    )(x)
     
-    # Feed Forward Network
-    ffn_output = layers.Dense(TRANSFORMER_UNITS, activation='relu', name='transformer_ffn_1')(x)
-    ffn_output = layers.Dense(TRANSFORMER_UNITS, name='transformer_ffn_2')(ffn_output)
-    
-    # Add & Norm
-    x = layers.Add(name='transformer_add_2')([x, ffn_output])
-    x = layers.LayerNormalization(epsilon=LAYER_NORM_EPSILON, name='transformer_norm_2')(x)
-
-    # Component 6: Classification Head
-    x = layers.GlobalAveragePooling1D(name='global_avg_pool')(x)
-    x = layers.Dense(CLASSIFICATION_UNITS[0], activation='relu', name='cls_dense_1')(x)
-    x = layers.Dropout(DROPOUT_RATE, name='cls_dropout')(x)
-    x = layers.Dense(CLASSIFICATION_UNITS[1], activation='relu', name='cls_dense_2')(x)
-    outputs = layers.Dense(num_classes, activation='softmax', name='predictions')(x)
-
-    # Create model
     model = models.Model(inputs=inputs, outputs=outputs, name='ABFA_Full_Model')
     
     return model
 
 def compile_model(model, learning_rate=LEARNING_RATE):
-    """
-    Compile the ABFA model with optimizer and loss function
-    
-    Args:
-        model (tf.keras.Model): ABFA model to compile
-        learning_rate (float): Learning rate for optimizer
-        
-    Returns:
-        tf.keras.Model: Compiled model
-    """
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
         loss='categorical_crossentropy',
@@ -254,16 +358,6 @@ def compile_model(model, learning_rate=LEARNING_RATE):
     return model
 
 def get_model_summary(model):
-    """
-    Get detailed model summary including parameter counts
-    
-    Args:
-        model (tf.keras.Model): Model to summarize
-        
-    Returns:
-        dict: Model summary information
-    """
-    # Calculate parameter counts
     trainable_params = np.sum([np.prod(v.shape) for v in model.trainable_weights])
     non_trainable_params = np.sum([np.prod(v.shape) for v in model.non_trainable_weights])
     total_params = trainable_params + non_trainable_params
