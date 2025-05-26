@@ -1,11 +1,12 @@
 # ABFA-HAR
-**(paper source) Action-Prototype Guided Temporal Modeling for Human Activity Recognition (https://github.com/lky473736/ABFA-HAR.git)**
+**(paper source) Activity-Based Feature Augmentation with Multi-Kernel Temporal
+Convolution and Transformer for Human Activity Recognition (https://github.com/lky473736/ABFA-HAR.git)**
 
 
 
 <p align="center"><img src='./model_architecture.png'></p>
 
-This repository implements the methodology proposed in the paper "Action-Prototype Guided Temporal Modeling for Human Activity Recognition".
+This repository implements the methodology proposed in the paper "Activity-Based Feature Augmentation with Multi-Kernel Temporal Convolution and Transformer for Human Activity Recognition".
 
 ## Datasets
 
@@ -73,7 +74,8 @@ If you use this code in your research, please cite:
 
 ```
 @article{lim2025ABFA,
-  title={Action-Prototype Guided Temporal Modeling for Human Activity Recognition},
+  title={Activity-Based Feature Augmentation with Multi-Kernel Temporal
+Convolution and Transformer for Human Activity Recognition},
   author={Gyuyeon Lim and Myung-Kyu Yi}
   journal={},
   volume={},
